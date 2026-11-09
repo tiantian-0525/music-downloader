@@ -9,6 +9,7 @@ import json
 import os
 import queue
 import re
+import shutil
 import subprocess
 import sys
 import threading
@@ -28,6 +29,16 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 CONF = os.path.join(HERE, "配置.json")
 NO_WINDOW = 0x08000000 if os.name == "nt" else 0
 IS_WIN = os.name == "nt"
+
+
+def itunes_drop_dir():
+    """iTunes 的「自动添加到 iTunes」投递口；找不到就返回空串。"""
+    base = os.path.join(os.path.expanduser("~"), "Music", "iTunes", "iTunes Media")
+    for n in ("自动添加到 iTunes", "Automatically Add to iTunes"):
+        p = os.path.join(base, n)
+        if os.path.isdir(p):
+            return p
+    return ""
 
 
 def ytdlp():
@@ -367,6 +378,15 @@ class App:
         self.save_lrc = tk.BooleanVar(value=self.conf.get("lrc", False))
         ttk.Checkbutton(act, text="另存 .lrc", variable=self.save_lrc).pack(side="right", padx=(4, 8))
 
+        act2 = ttk.Frame(root)
+        act2.pack(fill="x", padx=8)
+        self.to_itunes = tk.BooleanVar(value=self.conf.get("itunes", False))
+        ttk.Checkbutton(act2, text="下完投递 iTunes（自动加入资料库）",
+                        variable=self.to_itunes).pack(side="left", pady=(0, 2))
+        drop = itunes_drop_dir()
+        ttk.Label(act2, text=drop or "没找到 iTunes 的「自动添加到 iTunes」文件夹",
+                  foreground="#777").pack(side="left", padx=(8, 0))
+
         self.pb = ttk.Progressbar(root, mode="determinate")
         self.pb.pack(fill="x", padx=16, pady=(6, 2))
         self.var_stat = tk.StringVar(value="就绪")
@@ -424,7 +444,8 @@ class App:
             return
         self.stop_flag = True
         save_conf({"out": self.var_out.get(), "artist": self.var_artist.get(),
-                   "fill": self.fill_meta.get(), "lrc": self.save_lrc.get()})
+                   "fill": self.fill_meta.get(), "lrc": self.save_lrc.get(),
+                   "itunes": self.to_itunes.get()})
         self.root.destroy()
 
     # ---------- 列表 ----------
@@ -547,7 +568,8 @@ class App:
             return
         os.makedirs(out, exist_ok=True)
         save_conf({"out": out, "artist": self.var_artist.get(),
-                   "fill": self.fill_meta.get(), "lrc": self.save_lrc.get()})
+                   "fill": self.fill_meta.get(), "lrc": self.save_lrc.get(),
+                   "itunes": self.to_itunes.get()})
         self.busy = True
         self.stop_flag = False
         self.btn_go.configure(state="disabled")
@@ -653,6 +675,8 @@ class App:
                 os.replace(tag, dst)
             if getattr(self, "fill_meta", None) is not None and self.fill_meta.get():
                 self.dress(dst, clean_title(it["title"]), artist)
+            if self.to_itunes.get():
+                self.push_itunes(dst)
             return True, ""
         except subprocess.TimeoutExpired:
             return False, "超时"
@@ -681,6 +705,18 @@ class App:
         got = [x for x in ("封面" if cover else "", "歌词" if lrc else "") if x]
         self.q.put(("log", "  %s —— %s" % (os.path.basename(path),
                                            "、".join(got) if got else "没配到封面和歌词")))
+
+    def push_itunes(self, path):
+        """把下好的文件复制一份到 iTunes 的投递口，由 iTunes 自己导入资料库。"""
+        drop = itunes_drop_dir()
+        if not drop:
+            self.q.put(("log", "  ! 没找到 iTunes 的投递口，跳过"))
+            return
+        try:
+            shutil.copy2(path, os.path.join(drop, os.path.basename(path)))
+            self.q.put(("log", "  %s —— 已投递 iTunes" % os.path.basename(path)))
+        except Exception as e:
+            self.q.put(("log", "  ! 投递 iTunes 失败：%s" % str(e)[:70]))
 
     # ---------- 给已有文件补封面 ----------
     def fill_folder(self):
