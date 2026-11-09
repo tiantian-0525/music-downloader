@@ -362,8 +362,10 @@ class App:
         ttk.Button(act, text="打开文件夹", command=self.open_out).pack(side="left", padx=8)
         ttk.Button(act, text="给文件夹补封面", command=self.fill_folder).pack(side="left", padx=8)
         self.fill_meta = tk.BooleanVar(value=self.conf.get("fill", True))
-        ttk.Checkbutton(act, text="下载后配封面和歌词",
-                        variable=self.fill_meta).pack(side="right", padx=4)
+        ttk.Checkbutton(act, text="下完配封面和歌词",
+                        variable=self.fill_meta).pack(side="right", padx=(4, 6))
+        self.save_lrc = tk.BooleanVar(value=self.conf.get("lrc", False))
+        ttk.Checkbutton(act, text="另存 .lrc", variable=self.save_lrc).pack(side="right", padx=(4, 8))
 
         self.pb = ttk.Progressbar(root, mode="determinate")
         self.pb.pack(fill="x", padx=16, pady=(6, 2))
@@ -422,7 +424,7 @@ class App:
             return
         self.stop_flag = True
         save_conf({"out": self.var_out.get(), "artist": self.var_artist.get(),
-                   "fill": self.fill_meta.get()})
+                   "fill": self.fill_meta.get(), "lrc": self.save_lrc.get()})
         self.root.destroy()
 
     # ---------- 列表 ----------
@@ -544,7 +546,8 @@ class App:
             messagebox.showinfo("提示", "先选保存目录")
             return
         os.makedirs(out, exist_ok=True)
-        save_conf({"out": out, "artist": self.var_artist.get(), "fill": self.fill_meta.get()})
+        save_conf({"out": out, "artist": self.var_artist.get(),
+                   "fill": self.fill_meta.get(), "lrc": self.save_lrc.get()})
         self.busy = True
         self.stop_flag = False
         self.btn_go.configure(state="disabled")
@@ -669,7 +672,7 @@ class App:
         except Exception as e:
             self.q.put(("log", "  歌词没查到：%s" % str(e)[:70]))
         write_tags(path, title, artist, album, cover, lrc)
-        if lrc:
+        if lrc and self.save_lrc.get():
             try:
                 with open(os.path.splitext(path)[0] + ".lrc", "w", encoding="utf-8") as f:
                     f.write(lrc)
